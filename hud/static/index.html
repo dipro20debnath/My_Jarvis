@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis HUD</title>
+<link rel="icon" href="/static/jarvis.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Rajdhani:wght@400;500;600;700&family=Hind+Siliguri:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/style.css?v=3">
+</head>
+<body>
+<div class="bg-grid" aria-hidden="true"></div>
+<div class="scanline" aria-hidden="true"></div>
+
+<div id="boot" class="boot" aria-hidden="true">
+  <div class="boot-ring"></div>
+  <div class="boot-title">J.A.R.V.I.S.</div>
+  <ul id="bootLines" class="boot-lines"></ul>
+</div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <div>
+      <h1>J.A.R.V.I.S.</h1>
+      <p class="sub" id="greeting">Personal AI Agent · Local HUD</p>
+    </div>
+  </div>
+  <div id="statusPill" class="pill" data-state="offline"><span class="dot"></span><span id="statusText">STANDBY</span></div>
+  <div class="clock">
+    <div id="clockTime" class="clock-time">--:--:--</div>
+    <div id="clockDate" class="clock-date"></div>
+    <div id="clockBn" class="clock-bn"></div>
+  </div>
+</header>
+
+<main class="layout">
+  <!-- LEFT -->
+  <section class="col col-left">
+    <article class="card" id="weatherCard">
+      <h2 id="wxTitle">Weather · Dhaka</h2>
+      <div class="weather">
+        <div id="wxIcon" class="wx-icon">·</div>
+        <div>
+          <div id="wxTemp" class="wx-temp">--°</div>
+          <div id="wxDesc" class="muted">Loading…</div>
+        </div>
+      </div>
+      <dl class="kv" id="wxMore"></dl>
+    </article>
+
+    <article class="card">
+      <h2>System</h2>
+      <div class="gauges">
+        <div class="gauge" id="gCpu"><svg viewBox="0 0 64 64"><circle class="track" cx="32" cy="32" r="27"/><circle class="val" cx="32" cy="32" r="27"/></svg><b>--</b><span>CPU</span></div>
+        <div class="gauge" id="gRam"><svg viewBox="0 0 64 64"><circle class="track" cx="32" cy="32" r="27"/><circle class="val" cx="32" cy="32" r="27"/></svg><b>--</b><span>RAM</span></div>
+        <div class="gauge" id="gBat"><svg viewBox="0 0 64 64"><circle class="track" cx="32" cy="32" r="27"/><circle class="val" cx="32" cy="32" r="27"/></svg><b>--</b><span>Battery</span></div>
+      </div>
+      <div id="disks" class="disks"></div>
+      <dl class="kv" id="sysMore"></dl>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <h2>Timers</h2>
+        <div class="mini-btns">
+          <button class="chip-sm" data-timer="60">1m</button>
+          <button class="chip-sm" data-timer="300">5m</button>
+          <button class="chip-sm" data-timer="600">10m</button>
+          <button class="chip-sm" data-timer="1500">25m</button>
+        </div>
+      </div>
+      <ul id="timers" class="list"></ul>
+    </article>
+
+    <article class="card">
+      <h2>Quick commands</h2>
+      <div class="chips" id="chips">
+        <button data-say="Give me my daily briefing" class="hot">☀️ Briefing</button>
+        <button data-say="How is my PC doing? CPU, RAM, disks and battery.">💻 PC status</button>
+        <button data-say="Play some relaxing lofi music on YouTube">🎵 Music</button>
+        <button data-say="Open YouTube">▶️ YouTube</button>
+        <button data-say="Take a screenshot">📸 Screenshot</button>
+        <button data-say="Open my Downloads folder">📂 Downloads</button>
+        <button data-say="আজকের খবর শোনাও">🗞️ আজকের খবর</button>
+        <button data-say="technology news">📰 Tech news</button>
+        <button data-say="cyber security news">🛡️ Cyber news</button>
+      </div>
+    </article>
+  </section>
+
+  <!-- CENTER -->
+  <section class="col col-center">
+    <article class="card core">
+      <div class="orb-wrap">
+        <canvas id="orb" aria-label="Voice visualizer"></canvas>
+        <button id="orbBtn" class="orb-btn" title="Start / stop voice (Space)">
+          <span id="orbLabel">TAP TO TALK</span>
+        </button>
+      </div>
+      <div id="caption" class="caption" aria-live="polite"></div>
+      <div class="controls">
+        <button id="voiceBtn" class="btn primary">🎙️ Start voice</button>
+        <button id="muteBtn" class="btn" disabled>🔇 Mute</button>
+        <select id="engineSel" class="select" title="Voice engine">
+          <option value="auto">Voice: Auto</option>
+          <option value="eleven">Voice: ElevenLabs</option>
+          <option value="free">Voice: Free (Edge)</option>
+        </select>
+        <select id="langSel" class="select" title="Language you speak (free voice)">
+          <option value="bn-BD">বাংলা</option>
+          <option value="en-US">English</option>
+        </select>
+        <select id="voiceGender" class="select" title="Jarvis's voice">
+          <option value="male">🔊 Male voice</option>
+          <option value="female">🔊 Female voice</option>
+        </select>
+        <button id="testVoice" class="btn" title="Play a test sentence">🔈 Test</button>
+      </div>
+      <div class="controls toggles">
+        <label class="toggle" title="Free voice: only respond when you say 'Jarvis' (then 20 s of follow-up)">
+          <input type="checkbox" id="wakeWord"><span></span> Wake word “Jarvis”
+        </label>
+        <label class="toggle" title="Start talking while Jarvis speaks to cut in (best with headphones)">
+          <input type="checkbox" id="bargeIn" checked><span></span> Interrupt by voice
+        </label>
+        <label class="toggle" title="Speak replies even when voice is off">
+          <input type="checkbox" id="speakReplies" checked><span></span> Speak replies
+        </label>
+        <label class="toggle warn" title="Spoken PC commands run without asking first">
+          <input type="checkbox" id="autoApprove"><span></span> Auto-approve
+        </label>
+      </div>
+      <div id="log" class="log" aria-live="polite">
+        <div class="msg sys">Press <b>Start voice</b> (or <kbd>Space</kbd>) and talk — or type below.<br>⚡ Instant: “৫ মিনিটের টাইমার দাও”, “ইউটিউবে অরিজিৎ সিং চালাও”, “ভলিউম কমাও”, “ক্রোম খোলো”, “কয়টা বাজে”, “নোট রাখো …”, “থামো”, “আবার বলো”, “আস্তে বলো”, “English-এ শোনো”.<br>🧠 Smart: “আমার PC-র অবস্থা কেমন?”, “কাল ৩টায় মিটিং রাখো”, “আজকের agenda কী?”</div>
+      </div>
+      <form id="cmdForm" class="cmd">
+        <input id="cmdInput" autocomplete="off" placeholder="Type a command for Jarvis…  (Enter to send)">
+        <button class="btn primary" type="submit">Send ➤</button>
+      </form>
+      <p class="hint"><kbd>Space</kbd> talk / interrupt · <kbd>Esc</kbd> stop speaking · <kbd>/</kbd> type</p>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <h2>Jarvis tasks</h2>
+        <span id="workerState" class="muted small"></span>
+        <button id="clearTasks" class="link">Clear finished</button>
+      </div>
+      <ul id="tasks" class="tasks"></ul>
+    </article>
+  </section>
+
+  <!-- RIGHT -->
+  <section class="col col-right">
+    <article class="card">
+      <div class="card-head">
+        <button id="calPrev" class="link" aria-label="Previous month">◀</button>
+        <h2 id="calTitle">Calendar</h2>
+        <button id="calNext" class="link" aria-label="Next month">▶</button>
+      </div>
+      <div class="cal-dow"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+      <div id="calGrid" class="cal-grid"></div>
+      <h3 id="dayTitle" class="day-title"></h3>
+      <ul id="dayEvents" class="list"></ul>
+      <form id="eventForm" class="inline-form">
+        <input id="eventTitle" placeholder="New event…" required>
+        <input id="eventTime" type="time">
+        <button class="btn" type="submit">＋</button>
+      </form>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <h2>To-do</h2>
+        <span id="todoCount" class="muted small"></span>
+      </div>
+      <form id="todoForm" class="inline-form">
+        <input id="todoTitle" placeholder="Add a to-do…" required>
+        <input id="todoDue" type="date" title="Due date (optional)">
+        <button class="btn" type="submit">＋</button>
+      </form>
+      <ul id="todos" class="list todos"></ul>
+    </article>
+
+    <article class="card">
+      <h2>Notes</h2>
+      <form id="noteForm" class="inline-form">
+        <input id="noteText" placeholder="Quick note…" required>
+        <button class="btn" type="submit">＋</button>
+      </form>
+      <ul id="notes" class="list notes"></ul>
+    </article>
+  </section>
+</main>
+
+<div id="toasts" class="toasts" aria-live="assertive"></div>
+<script type="module" src="/static/app.js?v=6"></script>
+</body>
+</html>

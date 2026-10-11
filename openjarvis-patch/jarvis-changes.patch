@@ -1,0 +1,295 @@
+diff --git a/src/openjarvis/cli/daemon_cmd.py b/src/openjarvis/cli/daemon_cmd.py
+index 4a6a8e18..9f0b1708 100644
+--- a/src/openjarvis/cli/daemon_cmd.py
++++ b/src/openjarvis/cli/daemon_cmd.py
+@@ -255,13 +255,16 @@ def start(
+     # names the parameter ``unused_start_new_session`` and ignores it. Relying
+     # on it there leaves the server sharing its parent's console, so closing
+     # that console — or logging off — delivers CTRL_CLOSE_EVENT and kills the
+-    # daemon. DETACHED_PROCESS gives it no console at all; the new process
+-    # group additionally stops a Ctrl-C in the parent reaching it.
++    # daemon. CREATE_NO_WINDOW gives it its own console that is never shown:
++    # with DETACHED_PROCESS (no console) every console child it spawns pops up
++    # a visible window, and closing that window aborted the server with
++    # "forrtl: error (200): program aborting due to window-CLOSE event". The
++    # new process group additionally stops a Ctrl-C in the parent reaching it.
+     DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+     spawn_kwargs: dict = {}
+     if sys.platform == "win32":
+         spawn_kwargs["creationflags"] = (
+-            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
++            subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+         )
+     else:
+         spawn_kwargs["start_new_session"] = True
+diff --git a/src/openjarvis/core/config.py b/src/openjarvis/core/config.py
+index b3a073a9..b4f1220e 100644
+--- a/src/openjarvis/core/config.py
++++ b/src/openjarvis/core/config.py
+@@ -1624,7 +1624,7 @@ class SpeechConfig:
+     # back to a different backend that backend's own default voice is used.
+     # Kokoro IDs: bm_george / bm_lewis (British male), bf_emma / bf_isabella
+     # (British female), af_* / am_* (American).
+-    tts_backend: str = "kokoro"  # "kokoro", "openai_tts", "cartesia"
++    tts_backend: str = "kokoro"  # "kokoro", "openai_tts", "cartesia", "elevenlabs"
+     voice_id: str = "bm_george"
+     voice_speed: float = 1.0
+ 
+diff --git a/src/openjarvis/security/data_boundary_audit.py b/src/openjarvis/security/data_boundary_audit.py
+index 82177274..f1442a2a 100644
+--- a/src/openjarvis/security/data_boundary_audit.py
++++ b/src/openjarvis/security/data_boundary_audit.py
+@@ -219,7 +219,7 @@ GENERIC_NETWORK_TOOLS = {"http_request"}
+ WEATHER_TOOLS = {"get_weather"}
+ CHANNEL_OUTBOUND_TOOLS = {"channel_send"}
+ CLOUD_MEDIA_TOOLS = {"audio_transcribe", "image_generate", "text_to_speech"}
+-CLOUD_TTS_BACKENDS = {"cartesia", "openai", "openai_tts"}
++CLOUD_TTS_BACKENDS = {"cartesia", "elevenlabs", "openai", "openai_tts"}
+ # Local knowledge chunks scanned by an inference engine (Deep Research path).
+ KNOWLEDGE_ENGINE_TOOLS = {"scan_chunks"}
+ # External egress surfaces (web, browser, HTTP, channels, media, knowledge LM).
+diff --git a/src/openjarvis/server/cloud_router.py b/src/openjarvis/server/cloud_router.py
+index 53d4a9e7..a4de90ea 100644
+--- a/src/openjarvis/server/cloud_router.py
++++ b/src/openjarvis/server/cloud_router.py
+@@ -69,6 +69,12 @@ def _load_keys() -> dict[str, str]:
+ 
+ def get_provider(model: str) -> str | None:
+     """Return the provider for a model name, or None if it's a local model."""
++    # Ollama tags ("gpt-oss:120b-cloud", "qwen3.5:4b") are "name:tag" with no
++    # "/". Direct-provider IDs never look like that, but "gpt-oss" would
++    # otherwise match the OpenAI "gpt-" prefix. OpenRouter IDs such as
++    # "vendor/model:free" keep their "/" and still route below.
++    if ":" in model and "/" not in model and not model.startswith("ft:"):
++        return None
+     if any(model.startswith(p) for p in _OPENAI_PREFIXES):
+         return "openai"
+     if any(model.startswith(p) for p in _ANTHROPIC_PREFIXES):
+diff --git a/src/openjarvis/speech/__init__.py b/src/openjarvis/speech/__init__.py
+index 449f6214..05d9ea92 100644
+--- a/src/openjarvis/speech/__init__.py
++++ b/src/openjarvis/speech/__init__.py
+@@ -10,7 +10,7 @@ for _mod in ("faster_whisper", "openai_whisper", "deepgram"):
+         pass
+ 
+ # Optional TTS backends — each registers itself via @TTSRegistry.register()
+-for _mod in ("cartesia_tts", "kokoro_tts", "openai_tts"):
++for _mod in ("cartesia_tts", "elevenlabs_tts", "kokoro_tts", "openai_tts"):
+     try:
+         importlib.import_module(f".{_mod}", __name__)
+     except ImportError:
+diff --git a/src/openjarvis/speech/_tts_discovery.py b/src/openjarvis/speech/_tts_discovery.py
+index b77b9615..b8ac0a25 100644
+--- a/src/openjarvis/speech/_tts_discovery.py
++++ b/src/openjarvis/speech/_tts_discovery.py
+@@ -16,7 +16,7 @@ if TYPE_CHECKING:
+ logger = logging.getLogger(__name__)
+ 
+ # Priority order: local first, then cloud.
+-TTS_BACKEND_ORDER = ("kokoro", "openai_tts", "cartesia")
++TTS_BACKEND_ORDER = ("kokoro", "openai_tts", "cartesia", "elevenlabs")
+ 
+ # Voice IDs are backend-specific and NOT portable. ``speech.voice_id`` applies
+ # only to ``speech.tts_backend``; if synthesis falls back to another backend we
+@@ -25,6 +25,7 @@ BACKEND_DEFAULT_VOICE = {
+     "kokoro": "bm_george",  # British male
+     "openai_tts": "onyx",  # deepest OpenAI preset
+     "cartesia": "",  # no safe static default; let Cartesia choose
++    "elevenlabs": "",  # backend falls back to ELEVENLABS_VOICE_ID / "George"
+ }
+ 
+ 
+diff --git a/src/openjarvis/speech/elevenlabs_tts.py b/src/openjarvis/speech/elevenlabs_tts.py
+new file mode 100644
+index 00000000..89f74c9d
+--- /dev/null
++++ b/src/openjarvis/speech/elevenlabs_tts.py
+@@ -0,0 +1,111 @@
++"""ElevenLabs text-to-speech backend.
++
++Uses the ElevenLabs REST API for natural, expressive voice synthesis.
++Requires ELEVENLABS_API_KEY environment variable or config.
++Optional: ELEVENLABS_VOICE_ID (default voice), ELEVENLABS_MODEL (model id).
++"""
++
++from __future__ import annotations
++
++import os
++from typing import List
++
++import httpx
++
++from openjarvis.core.registry import TTSRegistry
++from openjarvis.speech.tts import TTSBackend, TTSResult
++
++_ELEVENLABS_API_BASE = "https://api.elevenlabs.io"
++
++# "George" premade voice — warm, mature British male, Jarvis-like
++_DEFAULT_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"
++_DEFAULT_MODEL = "eleven_multilingual_v2"
++_SAMPLE_RATE = 24000
++
++# Our format names -> ElevenLabs ``output_format`` query values
++_OUTPUT_FORMATS = {
++    "wav": f"wav_{_SAMPLE_RATE}",
++    "pcm": f"pcm_{_SAMPLE_RATE}",
++    "mp3": "mp3_44100_128",
++}
++
++
++def _elevenlabs_synthesize(
++    api_key: str,
++    text: str,
++    voice_id: str,
++    model: str = _DEFAULT_MODEL,
++    output_format: str = "mp3",
++    speed: float = 1.0,
++) -> bytes:
++    """Call the ElevenLabs TTS API and return raw audio bytes."""
++    body: dict = {"text": text, "model_id": model}
++    if speed != 1.0:
++        body["voice_settings"] = {"speed": speed}
++    resp = httpx.post(
++        f"{_ELEVENLABS_API_BASE}/v1/text-to-speech/{voice_id}",
++        params={"output_format": _OUTPUT_FORMATS.get(output_format, "mp3_44100_128")},
++        headers={"xi-api-key": api_key},
++        json=body,
++        timeout=120.0,
++    )
++    resp.raise_for_status()
++    return resp.content
++
++
++@TTSRegistry.register("elevenlabs")
++class ElevenLabsTTSBackend(TTSBackend):
++    """ElevenLabs TTS backend — expressive, human-like synthesis."""
++
++    backend_id = "elevenlabs"
++
++    def __init__(self, *, api_key: str = "", model: str = "") -> None:
++        self._api_key = api_key or os.environ.get("ELEVENLABS_API_KEY", "")
++        self._model = model or os.environ.get("ELEVENLABS_MODEL", _DEFAULT_MODEL)
++        self._default_voice = os.environ.get("ELEVENLABS_VOICE_ID", _DEFAULT_VOICE_ID)
++
++    def synthesize(
++        self,
++        text: str,
++        *,
++        voice_id: str = "",
++        speed: float = 1.0,
++        output_format: str = "mp3",
++    ) -> TTSResult:
++        if not self._api_key:
++            raise RuntimeError("ELEVENLABS_API_KEY not set")
++
++        voice_id = voice_id or self._default_voice
++        if output_format not in _OUTPUT_FORMATS:
++            output_format = "mp3"
++
++        audio = _elevenlabs_synthesize(
++            self._api_key,
++            text,
++            voice_id=voice_id,
++            model=self._model,
++            output_format=output_format,
++            speed=speed,
++        )
++
++        return TTSResult(
++            audio=audio,
++            format=output_format,
++            voice_id=voice_id,
++            sample_rate=_SAMPLE_RATE if output_format != "mp3" else 44100,
++            metadata={"backend": "elevenlabs", "model": self._model},
++        )
++
++    def available_voices(self) -> List[str]:
++        if not self._api_key:
++            return []
++        resp = httpx.get(
++            f"{_ELEVENLABS_API_BASE}/v1/voices",
++            headers={"xi-api-key": self._api_key},
++            timeout=30.0,
++        )
++        resp.raise_for_status()
++        return [v["voice_id"] for v in resp.json().get("voices", [])]
++
++    def health(self) -> bool:
++        return bool(self._api_key)
+diff --git a/tests/cli/test_daemon_cmd.py b/tests/cli/test_daemon_cmd.py
+index 79a672ee..63e39525 100644
+--- a/tests/cli/test_daemon_cmd.py
++++ b/tests/cli/test_daemon_cmd.py
+@@ -190,7 +190,7 @@ class TestDaemonDetachment:
+             patch("openjarvis.cli.daemon_cmd._LOG_FILE", tmp_path / "server.log"),
+             patch("openjarvis.cli.daemon_cmd.sys.platform", "win32"),
+             patch("openjarvis.cli.daemon_cmd._write_pid_unlocked") as write_pid,
+-            patch.object(subprocess, "DETACHED_PROCESS", 0x00000008, create=True),
++            patch.object(subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True),
+             patch.object(
+                 subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200, create=True
+             ),
+@@ -255,6 +255,7 @@ class TestDaemonDetachment:
+         # These constants are only exported by ``subprocess`` on Windows.
+         # Supply their documented values so the simulated Windows branch is
+         # still exercised by the POSIX test job.
++        create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+         detached_process = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+         create_new_process_group = getattr(
+             subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200
+@@ -262,8 +263,8 @@ class TestDaemonDetachment:
+         with (
+             patch.object(
+                 subprocess,
+-                "DETACHED_PROCESS",
+-                detached_process,
++                "CREATE_NO_WINDOW",
++                create_no_window,
+                 create=True,
+             ),
+             patch.object(
+@@ -276,9 +277,13 @@ class TestDaemonDetachment:
+             kwargs = self._spawn_kwargs("win32")
+ 
+         flags = kwargs.get("creationflags", 0)
+-        assert flags & detached_process, (
+-            "server must be spawned with DETACHED_PROCESS on Windows, otherwise "
+-            "closing the launching console kills it"
++        assert flags & create_no_window, (
++            "server must be spawned with CREATE_NO_WINDOW on Windows: its own "
++            "hidden console, so neither closing the launching console nor a "
++            "pop-up child console window can kill it"
++        )
++        assert not flags & detached_process, (
++            "DETACHED_PROCESS makes Windows ignore CREATE_NO_WINDOW"
+         )
+         assert flags & create_new_process_group, (
+             "server must be in its own process group so Ctrl-C in the parent "
+diff --git a/tests/server/test_cloud_router.py b/tests/server/test_cloud_router.py
+index b9f26851..560c0fe2 100644
+--- a/tests/server/test_cloud_router.py
++++ b/tests/server/test_cloud_router.py
+@@ -12,6 +12,23 @@ def test_get_provider_detects_bare_openrouter_id():
+     assert cloud_router.get_provider("anthropic/claude-haiku-4.5") == "openrouter"
+ 
+ 
++@pytest.mark.parametrize(
++    "model", ["gpt-oss:120b-cloud", "gpt-oss:20b", "gemma4:cloud", "qwen3.5:4b"]
++)
++def test_get_provider_treats_ollama_tags_as_local(model):
++    assert cloud_router.get_provider(model) is None
++
++
++def test_get_provider_keeps_openrouter_free_suffix():
++    model = "meta-llama/llama-3.3-70b-instruct:free"
++    assert cloud_router.get_provider(model) == "openrouter"
++
++
++def test_get_provider_still_detects_openai_ids():
++    assert cloud_router.get_provider("gpt-4.1-mini") == "openai"
++    assert cloud_router.get_provider("gpt-4o-2024-08-06") == "openai"
++
++
+ def test_get_provider_detects_litellm_prefixed_openrouter_id():
+     model = "openrouter/anthropic/claude-haiku-4.5"
+     assert cloud_router.get_provider(model) == "openrouter"

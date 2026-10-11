@@ -1,0 +1,56 @@
+# OpenJarvis - personal agent config
+# Personality: SOUL.md | About you: USER.md | Jarvis's own notes: MEMORY.md
+# (all in this same folder: D:\Software\My Cyber Field\Jarvis\my-agent\)
+
+[engine]
+default = "ollama"
+
+[intelligence]
+# Cloud model via Ollama Cloud (free plan: run `ollama signin` once): fast, smart,
+# good Bangla. Needs internet; your messages are processed on ollama.com servers.
+# Other free cloud options: gemma4:cloud, nemotron-3-super:cloud
+# Offline / private? Use the local model: change this line to "qwen3.5:4b"
+# (or for one question: jarvis ask -m qwen3.5:4b "...").
+default_model = "gpt-oss:120b-cloud"
+fallback_model = "qwen3.5:4b"
+temperature = 0.4
+max_tokens = 2048
+
+[agent]
+# orchestrator = multi-step agent that picks and uses tools by itself
+default_agent = "orchestrator"
+max_turns = 15
+context_from_memory = true
+# Replaces the built-in "You are OpenJarvis" identity line; SOUL.md adds the rest.
+default_system_prompt = "You are Jarvis, the user's personal AI agent, running locally on their own Windows laptop. If asked who you are, say you are Jarvis. Respond helpfully, concisely and accurately."
+
+[tools]
+# This list is the agent's whole permission set. Remove a tool to take that power away.
+# shell_exec runs real commands as you. `jarvis chat` asks before each one;
+# `jarvis ask` does NOT ask, so use chat for anything risky.
+enabled = [
+    "think",
+    "calculator",
+    "web_search",
+    "http_request",
+    "get_weather",
+    "file_read",
+    "file_write",
+    "apply_patch",
+    "code_interpreter",
+    "shell_exec",
+    "memory_manage",
+]
+
+[speech]
+# Voice mode: `jarvis chat --voice`
+# Your speech -> text: runs locally with Whisper (free, private). "small" = better accuracy, slower.
+backend = "faster-whisper"
+model = "base"
+device = "cpu"
+compute_type = "int8"
+language = ""            # empty = auto-detect (English, Bangla, ...)
+# Jarvis's replies -> voice: ElevenLabs (needs ELEVENLABS_API_KEY set in Windows)
+tts_backend = "elevenlabs"
+voice_id = "JBFqnCBsd6RMkjVDRZzb"   # "George". Paste any voice ID from elevenlabs.io/app/voice-library
+voice_speed = 1.0
